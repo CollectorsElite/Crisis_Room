@@ -55,7 +55,7 @@ export const rounds = [
     prompt:'Quali due attività affidate alla squadra di ripristino?',
     news:'La produzione può convalidare gli ordini campione prima della riapertura agli utenti.',
     question:'Quale prova avreste chiesto prima di autorizzare la riapertura?',
-    actions:[a('test','Collaudare il recupero','Provate la copia disponibile in un ambiente separato.'),a('restore','Riattivare SAP per fasi','Con una copia già verificata SAP rientra prima. Altrimenti serve anche il collaudo.'),a('rebuild','Bonificare le postazioni','Ricostruite i terminali compromessi da immagini aziendali affidabili.'),a('orders','Riconciliare gli ordini','Magazzino e amministrazione ricostruiscono le operazioni arretrate.')]
+    actions:[a('test','Collaudare il recupero','Provate la copia disponibile in un ambiente separato.'),a('restore','Avviare il rientro assistito','IT collauda la copia e riapre SAP per fasi. Una prova precedente riduce il fermo.'),a('rebuild','Bonificare le postazioni','Ricostruite i terminali compromessi da immagini aziendali affidabili.'),a('orders','Riconciliare gli ordini','Magazzino e amministrazione ricostruiscono le operazioni arretrate.')]
   },{
     time:'Giorno 2',title:'Davanti alla direzione',speaker:'Ing. Bianchi',role:'Direzione generale',
     quote:'Tra dieci minuti entra il consiglio. Voglio sapere che cosa abbiamo salvato, che cosa resta aperto e chi se ne occupa.',
@@ -150,6 +150,7 @@ export function resolve(previous,i,ids) {
   let minutes=offline?([0,0,0,50,65,140,120,60][i]):0;
   if(i===6){
     if(has(s,'restore')){
+      if(!has(s,'verify')&&!has(s,'test')){add(s.flags,'test');add(s.proof,evidence.test);}
       if(has(s,'verify')||has(s,'test')){
         if(offline) minutes=has(s,'verify')?20:has(s,'offline')?35:50;
         release('erp');notes.push('SAP è disponibile dopo il controllo della copia e la riapertura per fasi.');
@@ -182,3 +183,129 @@ export function evidenceReview(s){
     return {label,hint,level:parts.every(Boolean)?'Documentato':parts.some(Boolean)?'Parziale':'Da ricostruire'};
   });
 }
+
+// A scene belongs to the individual company. The classroom shares only its time window.
+const cast={
+ M:['Marco Ferri','Acquisti'], S:['Sara Conti','Acquisti'], L:['Luca Rossi','IT'],
+ G:['Giulia Neri','Risorse umane'], A:['Antonio Merli','Finanza'], D:['Ing. Bianchi','Direzione'],
+ P:['Elena Sala','Magazzino'], F:['Paolo Riva','Fornitore']
+};
+const scenes={
+ alarm:['Il preventivo illeggibile','Cosa rispondete a Marco?','isolate mail call forms',[
+ 'M|Sara, riesci ad aprire il preventivo Vetrilux? A me da stamattina dà errore.',
+ 'S|Il mio ordine di ieri si apre. Che nome ha il tuo file?',
+ 'M|È cambiata la fine del nome. E sul desktop è comparso un foglio in inglese.',
+ 'L|Marco, sono al telefono con te. Leggimi solo la prima riga.',
+ 'M|“Your files have been encrypted.” Più sotto chiedono 2,5 bitcoin. Il PC è ancora collegato.']],
+ clean:['La copia di Sara','Il file server risponde. Come usate il tempo guadagnato?','logs fallback nasguard',[
+ 'M|Ho staccato il cavo come mi avete detto. Adesso vi scrivo dal telefono.',
+ 'S|Luca, il mio preventivo nella cartella comune si apre ancora.',
+ 'L|Confermo dal monitoraggio. Quella condivisione risponde normalmente.',
+ 'P|Se devo preparare gli ordini fuori sistema, mi serve la lista mentre è ancora leggibile.',
+ 'S|Ho anche l’orario dell’ultimo accesso di Marco. Chi lo prende in carico?']],
+ spread:['La seconda postazione','Due postazioni e il file server sono coinvolti. Cosa mettete al riparo?','segment nasguard logs',[
+ 'S|Marco, anche la mia cartella adesso è piena di file .locked.',
+ 'M|Pure la tua? Pensavo riguardasse solo il mio portatile.',
+ 'L|Vedo le modifiche sul file server e sul PC di Sara. È la stessa condivisione.',
+ 'P|Le liste di carico passano da lì. Ho due autisti che aspettano.',
+ 'L|Il NAS è ancora collegato. Mi serve una priorità prima di separare i sistemi.']],
+ payroll:['Il fascicolo paghe','Come rispondete a HR con la condivisione ancora esposta?','staff hrmap trace',[
+ 'G|Sara mi ha appena girato la schermata. Sullo stesso server abbiamo le paghe.',
+ 'L|La condivisione coinvolta è ancora raggiungibile dagli uffici.',
+ 'G|Devo dire qualcosa ai dipendenti? Ho già tre chiamate.',
+ 'A|Prima di rispondere vorrei sapere quali cartelle potrebbero riguardarli.',
+ 'G|Posso ricostruire il perimetro oppure chiamare subito i capi turno. Da dove partiamo?']],
+ dock:['Il camion al cancello','Come gestite la consegna mentre IT verifica gli accessi?','service fallback trace',[
+ 'P|L’autista è qui per il bancale 18. Vuole la distinta firmata.',
+ 'S|Ho il numero d’ordine sulla conferma del cliente.',
+ 'A|Se parte due volte lo stesso bancale, il reclamo sarà nostro.',
+ 'P|Mi basta un referente che autorizzi la procedura alternativa.',
+ 'S|Posso chiamare il cliente o aiutare a ricostruire il registro. Cosa gli dico?']],
+ danger:['Un collegamento verso SAP','La condivisione esposta ora comunica con il segmento ERP. Come intervenite?','erpcut watch manual',[
+ 'L|Ho appena visto un collegamento dal segmento compromesso verso SAP.',
+ 'A|Il gestionale per ora risponde. Ho aperto io stesso un ordine.',
+ 'P|Senza SAP si ferma la stampa delle etichette.',
+ 'A|Un’ora di fermo pieno vale ottomila euro.',
+ 'L|Posso separare SAP subito. Chi autorizza la priorità?']],
+ reserve:['La prova del backup','SAP è raggiungibile. Quale preparazione autorizzate?','verify manual erpcut',[
+ 'L|Abbiamo una finestra di lavoro sul gestionale. SAP risponde.',
+ 'P|Prima di sospenderlo posso organizzare un banco manuale per i camion.',
+ 'L|In cassaforte c’è una copia offline. Sull’etichetta leggo una data di dodici giorni fa.',
+ 'A|Dodici giorni di ordini da ricostruire? Voglio sapere se quella copia si apre.',
+ 'P|Se mandate qui il tecnico per la continuità, il collaudo dovrà aspettare.']],
+ ransom:['Il costo del silenzio','SAP è indisponibile. Qual è la vostra risposta alla richiesta di riscatto?','ransom offline pay risk',[
+ 'A|Mi chiedono quanto ci costa tenere il gestionale fermo fino a domani.',
+ 'D|La richiesta di pagamento ha una scadenza. Qualcuno ha verificato la copia?',
+ 'L|Una promessa di chiave non ci dà un tempo di rientro verificabile.',
+ 'G|Nel frattempo devo far valutare anche l’impatto sulle persone.',
+ 'D|Voglio una decisione da verbalizzare adesso.']],
+ client:['La telefonata del cliente','SAP è disponibile. Cosa fate mentre la direzione riceve la richiesta dei criminali?','risk liaison ransom offline',[
+ 'S|Il cliente principale ha sentito parlare del blocco. Chiede se può ancora ordinare.',
+ 'P|Abbiamo verificato il gestionale: in questo momento accetta ordini.',
+ 'D|Ho davanti anche la richiesta dei criminali. Non promettiamo tempi al telefono.',
+ 'G|Vorrei capire chi raccoglie i fatti su dipendenti e fornitori.',
+ 'A|Possiamo incaricare un referente esterno oppure fissare prima la posizione aziendale.']],
+ vault:['La ricevuta senza chiave','Il pagamento simulato è partito. Come recuperate margine operativo?','offline perimeter flows',[
+ 'A|Contabilità ha registrato il pagamento. Nessuna chiave verificabile.',
+ 'D|Quanto tempo è passato dall’ultima risposta?',
+ 'L|Il contatto tace. Posso lavorare sulla copia offline in parallelo alle verifiche.',
+ 'P|Ho bisogno di una previsione per il turno pomeridiano.',
+ 'D|Scegliamo una via di recupero che dipenda da noi.']],
+ leak:['Una traccia in uscita','Il perimetro HR è esposto. Quale verifica avviate?','flows image perimeter',[
+ 'G|Mi chiedono se qualcuno ha copiato gli IBAN.',
+ 'L|Abbiamo una connessione in uscita. Il volume da solo non identifica il contenuto.',
+ 'G|Allora teniamo distinti i file inaccessibili da quelli eventualmente trasferiti.',
+ 'D|È questa distinzione che voglio nel prossimo aggiornamento.',
+ 'L|Posso acquisire i flussi prima che i registri ruotino.']],
+ access:['Una sessione da verificare','Che cosa verificate sul profilo di Marco?','identity image flows',[
+ 'L|C’è una sessione associata al profilo di Marco. Mi serve un riscontro.',
+ 'M|Da stamattina per parlare con voi uso il telefono.',
+ 'S|Ho tenuto da parte gli orari delle chiamate.',
+ 'L|Possiamo ricostruire la sequenza o revocare subito le sessioni esposte.',
+ 'D|Segnate anche quello che resta da accertare.']],
+ restore:['La finestra di rientro','SAP è fermo. Quale percorso di recupero autorizzate?','restore test rebuild',[
+ 'P|La linea aspetta la riapertura di SAP per chiudere il lotto.',
+ 'A|Mi servono tempi realistici prima di avvertire il cliente.',
+ 'L|Devo controllare le condizioni di rientro. Posso riaprire solo dopo un collaudo.',
+ 'P|Posso mettere a disposizione un ordine campione.',
+ 'D|Cosa facciamo durante questa finestra?']],
+ backlog:['Il bancale duplicato','SAP è disponibile, ma due distinte riportano lo stesso numero. Cosa verificate?','orders test rebuild',[
+ 'P|Ho due distinte con lo stesso ordine. Il bancale fisico è uno solo.',
+ 'S|Una distinta arriva dagli appunti del turno mattutino.',
+ 'A|SAP risponde, ma prima di fatturare dobbiamo capire quale registrazione vale.',
+ 'L|Il magazzino può verificare il movimento mentre noi lavoriamo sulle postazioni.',
+ 'P|Quale intervento ha la precedenza?']],
+ restart:['La riunione sul fermo','Il gestionale è ancora indisponibile. Quale impegno prendete davanti al consiglio?','plan exercise follow',[
+ 'D|Il consiglio è arrivato. La prima domanda è quando ripartiamo.',
+ 'A|Ho portato il conto del fermo maturato finora.',
+ 'P|Serve un responsabile per la prossima finestra di rientro.',
+ 'G|Anche le attività sui dati dei dipendenti devono avere un seguito.',
+ 'D|Cosa mi impegnate a consegnare oggi?']],
+ review:['La ricostruzione finale','SAP è disponibile. Quale evidenza portate al consiglio?','timeline follow exercise',[
+ 'D|SAP risponde. Domani il cliente ci chiederà come abbiamo gestito la crisi.',
+ 'S|Ho conservato ordini e telefonate. Possiamo mettere gli eventi in sequenza.',
+ 'G|Io porto il fascicolo del personale con le questioni ancora aperte.',
+ 'P|Vorrei verificare che la prossima squadra sappia usare la procedura manuale.',
+ 'D|Decidiamo cosa presentare al consiglio prima che entri.']]
+};
+const choices=Object.fromEntries(rounds.flatMap(r=>r.actions.map(a=>[a.id,a])));
+export function episode(i,s){
+ const erpDown=s.active.includes('erp')||s.cut.includes('erp');
+ const spread=s.active.includes('share')&&!s.cut.includes('share');
+ const key=['alarm',s.hit.includes('share')?'spread':'clean',spread?'payroll':'dock',spread?'danger':'reserve',erpDown?'ransom':'client',has(s,'pay')?'vault':s.hit.includes('hr')||has(s,'hrmap')?'leak':'access',erpDown?'restore':'backlog',erpDown?'restart':'review'][i];
+ const [title,prompt,ids,lines]=scenes[key];
+ const messages=lines.map(line=>{const [who,text]=line.split('|');return {who:cast[who][0],role:cast[who][1],text};});
+ if(i===6&&erpDown)messages[2].text=has(s,'verify')?'La copia ha già superato il collaudo. Se date il via, possiamo riaprire per fasi.':'La copia deve ancora superare il collaudo. Per riaprire in questa finestra serve un rientro assistito.';
+ return {key,title,prompt,messages,actions:ids.split(' ').map(id=>choices[id])};
+}
+const confirmations={
+ isolate:'Marco qui. Il cavo è staccato. Resto al telefono con Luca.',mail:'Ho salvato l’email originale con i dati di consegna. La passo a IT.',call:'I responsabili sono sul canale alternativo. Ho annotato chi manca.',forms:'Ho trovato i moduli cartacei. Li porto al banco spedizioni.',
+ logs:'Ho messo da parte il registro accessi con gli orari originali.',fallback:'Il registro ordini è aperto in magazzino. Cominciamo dalle urgenze.',nasguard:'Il NAS è separato. Per verificare le copie dovremo raggiungerlo da una postazione dedicata.',segment:'Ho separato il file server. Avvisate gli acquisti: la cartella ora è fuori rete.',
+ staff:'I capi turno stanno raccogliendo le conferme. In linea avvisiamo a voce.',hrmap:'HR ha circoscritto i fascicoli da verificare. Porto il prospetto al DPO.',trace:'Ho confrontato le chiamate con il giornale del turno e segnato le discrepanze.',service:'Il cliente accetta una seconda finestra. Sara ha preso nota dell’orario.',
+ erpcut:'SAP è isolato. Ho avvisato il magazzino che le etichette dovranno aspettare.',manual:'Il banco manuale è aperto. Possiamo far partire almeno gli ordini urgenti.',verify:'La prova sulla copia offline è riuscita. Conservo il verbale.',watch:'Presidio attivo per questa finestra. Al cambio turno dovremo rivalutare il collegamento.',
+ risk:'Il DPO e il titolare stanno registrando circostanze, rischi e decisioni.',ransom:'La direzione ha verbalizzato il rifiuto. Luca lavora alle alternative.',pay:'Contabilità ha registrato il pagamento simulato. Ancora nessuna chiave verificabile.',offline:'Il supporto offline è sul banco di prova.',liaison:'Ho aperto i contatti esterni e assegnato un referente per gli aggiornamenti.',
+ flows:'Ho acquisito gli intervalli e le destinazioni dei flussi. Il contenuto resta da verificare.',image:'La copia forense della postazione è presa in carico.',identity:'Sessioni esposte revocate. Marco dovrà autenticarsi di nuovo.',perimeter:'I collegamenti residui sono stati limitati. Verifichiamo la produzione.',
+ test:'Collaudo concluso. Il verbale è nel fascicolo di rientro.',restore:'Sto eseguendo il rientro per fasi. Vi aggiorno con l’esito del controllo.',rebuild:'Abbiamo ricostruito le postazioni coinvolte usando immagini aziendali.',orders:'Magazzino e amministrazione hanno riconciliato gli ordini arretrati.',
+ timeline:'Cronologia firmata. Le ipotesi ancora aperte sono indicate a parte.',plan:'Il consiglio ha approvato responsabili e priorità di rientro.',follow:'Il fascicolo privacy è aggiornato con gli elementi raccolti.',exercise:'Abbiamo svolto la prova di continuità con i capi turno.'
+};
+export function acknowledgment(ids){return ids.map(id=>confirmations[id]).filter(Boolean).join(' ');}

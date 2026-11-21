@@ -1,6 +1,6 @@
 # ESCALATION Crisis Room
 
-**Missione 01 · Paziente Zero · Versione 1.1**
+**Missione 01 · Paziente Zero · Versione 2.0**
 
 Martedì, ore 09:14. Marco Ferri segnala che i preventivi di Meridian Components sono illeggibili. Da un dispositivo per squadra, i partecipanti dirigono la risposta dell’azienda lungo otto turni. La regia sincronizza l’aula e può confrontare le conseguenze di due strategie nello stesso momento della crisi.
 
@@ -23,7 +23,7 @@ Il servizio usa Node.js 24 e un file di stato con sostituzione atomica. Tutti gl
 | Verifica | GET /health restituisce HTTP 200 e stato ok |
 | Segreto docente | TEACHER_PASSWORD, almeno 12 caratteri |
 
-**Verifica dopo il deploy.** Apri il proiettore su un secondo browser o dispositivo e inserisci il codice. Registra una squadra di prova, avvia un turno, invia due incarichi e chiudilo. Dopo un riavvio controlla che regia e squadra ritrovino lo stesso turno. Per predisporre l’aula reale apri *Gestione sessione → Nuova aula* e conferma con il codice della sessione di prova.
+**Verifica dopo il deploy.** Apri il proiettore su un secondo browser o dispositivo e inserisci il codice. Registra una squadra di prova, avvia un turno, invia una decisione e chiudilo. Dopo un riavvio controlla che regia e squadra ritrovino lo stesso turno. Per predisporre l’aula reale apri *Gestione sessione → Nuova aula* e conferma con il codice della sessione di prova.
 
 Documentazione della piattaforma: [deploy](https://docs.railway.com/deployments), [volumi](https://docs.railway.com/volumes), [healthcheck](https://docs.railway.com/deployments/healthchecks).
 
@@ -39,6 +39,10 @@ Apri **http://localhost:3000** e seleziona **Docente**. Per questa modalità il 
 
 ## 3. Conduzione della lezione
 
+All’avvio i cinque messaggi di ciascuna scena compaiono progressivamente nel canale aziendale. Dopo circa undici secondi compare la richiesta di intervento. La squadra seleziona una sola decisione. La risposta del reparto, gli effetti e la mappa sono subito visibili alla squadra. La pausa congela la sequenza; ricaricare la pagina riprende dalla finestra temporale del server.
+
+Le otto finestre condividono l’orario ma hanno sedici scene complessive. Al secondo turno chi ha isolato il PC vede «La copia di Sara»; chi ha privilegiato l’acquisizione dell’email vede «La seconda postazione» con il file server già coinvolto. Le decisioni offerte dipendono dalla scena. Percorsi diversi possono convergere se si ristabiliscono condizioni simili. Il docente vede i percorsi delle squadre e sceglie **Mostra chat** per cambiare l’azienda seguita dal proiettore. La lavagna mostra esplicitamente il nome della squadra seguita. Alla chiusura del turno la regia può affiancare gli esiti di due squadre. I messaggi precedenti sono rileggibili dal canale della squadra.
+
 Tutte le postazioni entrano dalla stessa pagina. In caso di sessione già attiva compare **Riprendi** per il ruolo selezionato. Il comando **Cambia postazione** riapre l’ingresso. Gli indirizzi diretti della versione 1.0 continuano a funzionare e, quando occorre autenticarsi, riportano all’ingresso con il ruolo preselezionato.
 
 Prevedi 3–4 minuti di briefing, circa 20 minuti di decisioni e 7–15 minuti per gli esiti e la discussione. Il timer indica 2 minuti e 30 secondi consigliati per turno. Allo zero la regia conserva il controllo della chiusura. La simulazione fa avanzare il tempo aziendale solo alla risoluzione dei turni.
@@ -46,8 +50,12 @@ Prevedi 3–4 minuti di briefing, circa 20 minuti di decisioni e 7–15 minuti p
 | Vista | Operazioni |
 |---|---|
 | Regia · /regia | Avvia, mette in pausa, invia una notizia, controlla le consegne, chiude il turno e decide quali squadre e quale turno proiettare. Scarica il verbale in formato TXT. |
-| Squadra · /squadra | Legge il dialogo, consulta la propria mappa, sceglie due incarichi diversi e ne motiva la priorità. Rivede effetti, fascicolo e diario. |
+| Squadra · /squadra | Legge il dialogo, consulta la propria mappa, sceglie una risposta e può aggiungere una nota. Rivede effetti, fascicolo e diario. |
 | Proiettore · /schermo | In ingresso espone indirizzo e codice aula. Durante la crisi mostra dialoghi e conteggio delle consegne. A turno chiuso confronta decisioni, motivazioni ed effetti. |
+
+**Come terminare prima.** Nella regia, seleziona **Termina simulazione** e conferma. Puoi farlo mentre un turno è aperto, durante una pausa o mentre discuti il risultato di un turno intermedio. Le consegne ricevute vengono risolte una volta; per le squadre ancora al lavoro il turno è segnato come interrotto e il bilancio resta fermo. Tutti passano al debriefing. Seleziona **Scarica il verbale** per conservare i risultati. Dopo l’esito dell’ottavo turno seleziona **Apri il debriefing**.
+
+**Se vuoi soltanto discutere.** Usa **Pausa** per sospendere le consegne e riprendere dallo stesso punto. Usa **Chiudi il turno** per calcolare gli esiti del singolo turno. Solo la regia decide quando avanzare o concludere.
 
 Consiglia gruppi di 3–5 persone. Una persona coordina, una rappresenta l’IT e una difende le esigenze operative. Con gruppi più grandi assegna anche privacy e direzione finanziaria. Occorre un solo dispositivo per gruppo. Il limite configurato è di 80 squadre nella stessa aula.
 

@@ -24,7 +24,7 @@ test('80 squadre: ingresso, consegne simultanee e lettura degli esiti',async()=>
     assert.ok(group.every(r=>r.code===200&&r.cookie));
     assert.equal((await send('/api/join',{code:init.code,name:'Tavolo extra'})).code,409);
     assert.equal((await send('/api/control',{op:'start',room:init.room,step:init.step},host)).code,200);
-    const submissions=await Promise.all(group.map(g=>send('/api/submit',{room:init.room,round:0,ids:['isolate','mail'],reason:'Conservare il messaggio e isolare il PC.'},g.cookie)));
+    const submissions=await Promise.all(group.map(g=>send('/api/submit',{room:init.room,round:0,ids:['isolate'],reason:'Conservare il messaggio e isolare il PC.'},g.cookie)));
     assert.ok(submissions.every(r=>r.code===200));
     const turn=await read('teacher',host);assert.equal(turn.ready,80);
     assert.equal((await send('/api/control',{op:'close',room:init.room,step:turn.step},host)).code,200);

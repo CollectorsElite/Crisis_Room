@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {rounds,replies,assets,initial,briefing,resolve,indicator,status,evidenceReview} from './mission.js';
+import {rounds,episode,acknowledgment,assets,initial,briefing,resolve,indicator,status,evidenceReview} from './mission.js';
 
 const root=path.dirname(fileURLToPath(import.meta.url));
 const dir=process.env.DATA_DIR||process.env.RAILWAY_VOLUME_MOUNT_PATH||path.join(root,'data');
@@ -49,27 +49,59 @@ async function body(req){
   try{const b=JSON.parse(Buffer.concat(parts));if(b&&typeof b==='object'&&!Array.isArray(b))return b;}catch{}
   reject(400,'Richiesta non valida.');
 }
-const actionsFor=(i,ids)=>rounds[i].actions.filter(a=>ids.includes(a.id)).map(a=>a.title);
+const actionNames=new Map(rounds.flatMap(r=>r.actions.map(a=>[a.id,a.title])));
+const actionsFor=(i,ids)=>ids.map(id=>actionNames.get(id)).filter(Boolean);
+function dialogue(t,i){
+  const h=t.history.find(h=>h.round===i);
+  const scene=episode(i,h?.before||t.state);
+  const p=h||t.pending;
+  return {title:h?.branch||scene.title,time:rounds[i].time,messages:scene.messages,
+    decision:h?h.titles.join(' + '):p?actionsFor(i,p.ids).join(' + '):null,
+    reply:h?h.ack:p?acknowledgment(p.ids):null,notes:h?h.notes:p?resolve(t.state,i,p.ids).notes:[]};
+}
 function snapshotTeam(t){return {id:t.id,name:t.name,ready:!!t.pending,metrics:indicator(t.state),proof:t.state.proof,assessment:evidenceReview(t.state),map:assets.map(([id,n,d])=>({id,n,d,status:status(t.state,id)})),history:t.history};}
 function view(g,role,t){
   const i=g.round,r=rounds[i],review=['review','end'].includes(g.phase);
-  const out={room:g.id.slice(0,12),version:g.version,step:g.step,phase:g.phase,round:i,total:rounds.length,
+  const out={endedByTeacher:!!g.endedByTeacher,room:g.id.slice(0,12),version:g.version,step:g.step,phase:g.phase,round:i,total:rounds.length,
     clockEnd:g.clockEnd,remaining:g.remaining,now:Date.now(),count:g.teams.length,ready:g.teams.filter(x=>x.pending).length,
     scene:{time:r.time,title:r.title,speaker:r.speaker,role:r.role,quote:r.quote,prompt:r.prompt,
-      reply:replies[i],news:g.news?r.news:null,question:review?r.question:null},pair:g.pair,focus:g.focus??null};
+      news:g.news?r.news:null,question:review?r.question:null},pair:g.pair,focus:g.focus??null};
   if(role==='teacher'||role==='screen')out.code=g.code;
   if(role==='teacher') out.teams=g.teams.map(x=>({...snapshotTeam(x),resume:x.resume}));
   if(role==='screen'){
     out.names=g.teams.map(x=>x.name);
     out.teams=review?g.pair.map(id=>g.teams.find(t=>t.id===id)).filter(Boolean).map(snapshotTeam):[];
   }
+  if(g.phase!=='lobby'){
+    const followed=role==='team'?t:g.teams.find(x=>x.id===g.follow)||g.teams[0];
+    const branch=episode(i,followed.history.find(h=>h.round===i)?.before||followed.state);
+    Object.assign(out.scene,{title:branch.title,prompt:branch.prompt});
+    out.thread=Array.from({length:i+1},(_,n)=>dialogue(followed,n));
+    if(role!=='team'){
+      out.follow=followed.id;out.followName=followed.name;
+      out.routes=g.teams.map(x=>({id:x.id,name:x.name,title:episode(i,x.history.find(h=>h.round===i)?.before||x.state).title}));
+    }
+  }
   if(role==='team'){
     out.team=snapshotTeam(t);
     out.brief=briefing(i,review&&t.history.length?t.history.at(-1).before:t.state);
-    out.actions=r.actions;
+    out.actions=episode(i,t.state).actions;
+    if(t.pending){const projected=resolve(t.state,i,t.pending.ids).s;out.team.metrics=indicator(projected);out.team.map=assets.map(([id,n,d])=>({id,n,d,status:status(projected,id)}));}
     out.pending=t.pending?{titles:actionsFor(i,t.pending.ids),reason:t.pending.reason}:null;
   }
   return out;
+}
+function settleRound(g,early){
+  for(const t of g.teams){
+    const interrupted=early&&!t.pending;
+    const p=t.pending||{ids:[],reason:interrupted?'Turno interrotto dal docente prima della consegna.':'Nessuna consegna entro la chiusura.'};
+    const result=interrupted?{s:t.state,notes:['Bilancio conservato al momento della chiusura.']}:resolve(t.state,g.round,p.ids);
+    t.history.push({round:g.round,title:episode(g.round,t.state).title,branch:episode(g.round,t.state).title,ack:acknowledgment(p.ids),titles:actionsFor(g.round,p.ids),reason:p.reason,
+      interrupted,notes:result.notes,before:t.state,metrics:indicator(result.s),news:g.news});
+    t.state=result.s;t.pending=null;
+  }
+  g.clockEnd=null;g.focus=null;
+  if(!g.pair.length)g.pair=g.teams.slice(0,2).map(t=>t.id);
 }
 function control(g,b){
   if(b.room!==g.id.slice(0,12)||b.step!==g.step)reject(409,'La regia è già cambiata. Aggiorna la vista.');
@@ -78,20 +110,19 @@ function control(g,b){
     if(b.confirm!==g.code)reject(400,'Inserisci il codice della sessione da sostituire.');
     return room();
   }
-  if(op==='start'&&g.phase==='lobby'&&g.teams.length){g.phase='open';g.clockEnd=Date.now()+g.remaining;}
+  if(op==='follow'&&['open','paused','review','end'].includes(g.phase)&&g.teams.some(t=>t.id===b.id)){g.follow=b.id;}
+  else if(op==='start'&&g.phase==='lobby'&&g.teams.length){g.phase='open';g.clockEnd=Date.now()+g.remaining;}
   else if(op==='pause'&&g.phase==='open'){g.remaining=Math.max(0,g.clockEnd-Date.now());g.clockEnd=null;g.phase='paused';}
   else if(op==='resume'&&g.phase==='paused'){g.phase='open';g.clockEnd=Date.now()+g.remaining;}
   else if(op==='news'&&['open','paused'].includes(g.phase)&&!g.news){g.news=true;}
   else if(op==='close'&&['open','paused'].includes(g.phase)){
     if(g.teams.some(t=>!t.pending)&&b.confirm!==true)reject(409,'Alcune squadre devono ancora consegnare.');
-    for(const t of g.teams){
-      const p=t.pending||{ids:[],reason:'Nessuna consegna entro la chiusura.'};
-      const {s,notes}=resolve(t.state,g.round,p.ids);
-      t.history.push({round:g.round,title:rounds[g.round].title,titles:actionsFor(g.round,p.ids),reason:p.reason,
-        notes,before:t.state,metrics:indicator(s),news:g.news});
-      t.state=s;t.pending=null;
-    }
-    g.phase='review';g.clockEnd=null;g.focus=null;if(!g.pair.length)g.pair=g.teams.slice(0,2).map(t=>t.id);
+    settleRound(g,false);
+    g.phase='review';
+  }else if(op==='finish'&&['open','paused','review'].includes(g.phase)){
+    if(b.confirm!==true)reject(400,'Conferma la conclusione della simulazione.');
+    if(g.phase!=='review')settleRound(g,true);
+    g.phase='end';g.clockEnd=null;g.focus=null;g.endedByTeacher=true;
   }else if(op==='next'&&g.phase==='review'){
     if(g.round===rounds.length-1)g.phase='end';else{g.round++;g.phase='open';g.news=false;g.remaining=150000;g.clockEnd=Date.now()+g.remaining;}
   }else if(op==='compare'&&['review','end'].includes(g.phase)){
@@ -157,11 +188,11 @@ const server=http.createServer(async(req,res)=>{
     if(p==='/api/submit'){
       const g=structuredClone(game),t=needTeam(req,g);
       if(b.room!==g.id.slice(0,12)||b.round!==g.round)reject(409,'Turno cambiato. Controlla la sala.');
-      const valid=rounds[g.round].actions.map(a=>a.id);
-      if(!Array.isArray(b.ids)||b.ids.length!==2||new Set(b.ids).size!==2||!b.ids.every(x=>valid.includes(x)))reject(400,'Seleziona due azioni distinte.');
+      const valid=episode(g.round,t.state).actions.map(a=>a.id);
+      if(!Array.isArray(b.ids)||b.ids.length!==1||!b.ids.every(x=>valid.includes(x)))reject(400,'Scegli una risposta alla chat.');
       if(b.ids.includes('ransom')&&b.ids.includes('pay'))reject(400,'Scegli una sola linea sul riscatto.');
       const reason=typeof b.reason==='string'?b.reason.trim():'';
-      if(reason.length<5||reason.length>300)reject(400,'Motiva la scelta in 5–300 caratteri.');
+      if(reason.length>300)reject(400,'Usa al massimo 300 caratteri.');
       const ids=valid.filter(id=>b.ids.includes(id));
       if(t.pending&&t.pending.reason===reason&&String(t.pending.ids)===String(ids))return json(res,200,{ok:true});
       if(g.phase!=='open'||t.pending)reject(409,'Consegna chiusa o già registrata.');

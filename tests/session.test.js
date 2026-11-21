@@ -53,18 +53,27 @@ test('Sessione completa, concorrenza, ripresa e separazione delle viste',async()
     assert.equal((await sv()).teams.length,0);
     check(await op('start'));check(await req('/api/join',{code,name:'Gamma'}),409);
     for(let i=0;i<rounds.length;i++){
-      const v=await view(),ids=rounds[i].actions.map(x=>x.id);
+      const v=await view(),ids=(await tview(a)).actions.map(x=>x.id),otherIds=(await tview(b)).actions.map(x=>x.id);
       const send=(cookie,ids)=>req('/api/submit',{room:v.room,round:i,ids,reason:'Manteniamo la continuità del reparto.'},cookie);
       if(i===0){
-        check(await op('pause'));check(await send(a,ids.slice(0,2)),409);
+        check(await op('pause'));check(await send(a,ids.slice(0,1)),409);
         check(await op('news'));assert.ok((await sv()).scene.news);
         check(await op('resume'));check(await send(a,[ids[0],ids[0]]),400);
         check(await op('close'),409);
       }
-      const submissions=await Promise.all([send(a,ids.slice(0,2)),send(a,ids.slice(0,2)),...(i===2?[]:[send(b,ids.slice(2,4))])]);
+      if(i===1){
+        const left=await tview(a),right=await tview(b);
+        assert.equal(left.scene.title,'La copia di Sara');assert.equal(right.scene.title,'La seconda postazione');
+        assert.notEqual(left.scene.prompt,right.scene.prompt);
+        check(await send(a,['segment']),400);
+        check(await op('follow',{id:right.team.id}));
+        assert.equal((await sv()).scene.title,right.scene.title);
+        assert.equal(left.thread.length,2);assert.equal(left.thread[1].messages.length,5);
+      }
+      const submissions=await Promise.all([send(a,ids.slice(0,1)),send(a,ids.slice(0,1)),...(i===2?[]:[send(b,otherIds.slice(1,2))])]);
       submissions.forEach(r=>check(r));
       if(i===3){
-        await stop();await boot();assert.equal((await tview(a)).pending.titles.length,2);
+        await stop();await boot();assert.equal((await tview(a)).pending.titles.length,1);
         const resume=(await view()).teams.find(t=>t.name==='Alfa').resume;
         const rejoin=await req('/api/join',{code,name:'Alfa',resume});check(rejoin);
         check(await req('/api/view?role=team',null,a),401);a=rejoin.cookie;
@@ -84,5 +93,30 @@ test('Sessione completa, concorrenza, ripresa e separazione delle viste',async()
     check(await op('reset',{confirm:'errato'}),400);check(await op('reset',{confirm:code}));
     assert.equal((await view()).phase,'lobby');check(await req('/api/view?role=team',null,a),401);
     check(await req('/api/view?role=screen',null,screen),401);
+
+    for(const phase of ['open','paused','review']){
+      const lobby=await view();
+      const registrations=await Promise.all(['Alfa','Beta'].map(name=>req('/api/join',{code:lobby.code,name})));
+      const [alpha,beta]=registrations.map(r=>r.cookie);
+      check(await op('start'));
+      const before=(await tview(beta)).team.metrics;
+      const decision={room:lobby.room,round:0,ids:['isolate'],reason:'Conserviamo il messaggio.'};
+      check(await req('/api/submit',decision,alpha));
+      if(phase==='paused')check(await op('pause'));
+      if(phase==='review')check(await op('close',{confirm:true}));
+      check(await op('finish'),400);
+      assert.equal((await view()).phase,phase);
+      check(await op('finish',{confirm:true}));
+      check(await op('finish',{confirm:true}),409);
+      check(await req('/api/submit',decision,beta),409);
+      if(phase==='paused'){await stop();await boot();}
+      const current=await view();
+      assert.equal(current.phase,'end');assert.equal(current.endedByTeacher,true);assert.equal(current.clockEnd,null);
+      const submitted=(await tview(alpha)).team,other=(await tview(beta)).team;
+      assert.equal(submitted.history.length,1);assert.equal(submitted.history[0].reason,decision.reason);
+      assert.equal(other.history.length,1);assert.equal(other.history[0].interrupted,phase!=='review');
+      if(phase!=='review')assert.deepEqual(other.metrics,before);
+      check(await op('reset',{confirm:lobby.code}));
+    }
   }finally{await stop();await fs.rm(dir,{recursive:true,force:true});}
 });

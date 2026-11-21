@@ -30,11 +30,34 @@ with tempfile.TemporaryDirectory() as state:
    teacher.get_by_text('Docente',exact=True).click()
    teacher.get_by_role('link',name='Riprendi la regia').click()
    teacher.locator('[data-op=start]').click()
+   if os.environ.get('EARLY_FINISH')=='1':
+    team=teams[0]
+    team.locator('#decide [type=radio]').first.check()
+    team.locator('textarea').fill('Manteniamo le evidenze del caso.')
+    team.locator('#decide button').click()
+    expect(teacher.get_by_text('1 / 2 consegne')).to_be_visible()
+    teacher.locator('[data-op=pause]').click()
+    teacher.once('dialog',lambda dialog:dialog.dismiss())
+    teacher.get_by_role('button',name='Termina simulazione').click()
+    expect(teacher.locator('[data-op=resume]')).to_be_visible()
+    teacher.once('dialog',lambda dialog:dialog.accept())
+    teacher.get_by_role('button',name='Termina simulazione').click()
+    for client in [teacher,screen,*teams]:
+     expect(client.get_by_role('heading',name='Debriefing')).to_be_visible()
+    with teacher.expect_download() as dl:teacher.locator('[data-op=export]').first.click()
+    report=Path(dl.value.path()).read_text()
+    assert 'Manteniamo le evidenze del caso.' in report and 'Turno interrotto dal docente' in report and 'Turno 2' not in report
+    assert not errors
+    print('Chiusura anticipata: annullamento, conferma, quattro postazioni e verbale verificati.')
+    browser.close()
+    raise SystemExit(0)
+   expect(teams[0].locator('.thread .bubble:visible').first).to_be_visible()
+   expect(teams[0].locator('#decide')).to_be_hidden()
    for i in range(8):
     for j,p in enumerate(teams):
-     group=p.locator('#decide [type=checkbox]')
+     group=p.locator('#decide [type=radio]')
      expect(group.first).to_be_enabled()
-     group.nth(2*j).check();group.nth(2*j+1).check()
+     group.nth(j).check()
      p.locator('textarea').fill('Verifichiamo gli effetti sul reparto '+str(i+1))
      if i==0 and j==0:
       teacher.locator('[data-op=pause]').click()
@@ -47,7 +70,7 @@ with tempfile.TemporaryDirectory() as state:
       expect(p.locator('textarea')).to_have_value('Verifichiamo gli effetti sul reparto 1')
      if i==3:
       assert p.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'mobile overflow'
-     p.locator('#decide button').click();expect(p.get_by_text('Ordine consegnato')).to_be_visible()
+     p.locator('#decide button').click();expect(p.get_by_text('Decisione inviata')).to_be_visible()
     expect(teacher.get_by_text('2 / 2 consegne')).to_be_visible()
     teacher.locator('[data-op=close]').click()
     expect(screen.locator('.comparison')).to_be_visible()
